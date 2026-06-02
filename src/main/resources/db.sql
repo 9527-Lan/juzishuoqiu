@@ -64,12 +64,15 @@ CREATE TABLE IF NOT EXISTS `user_comment` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `article_id` bigint NOT NULL COMMENT '方案ID',
+  `parent_id` bigint DEFAULT NULL COMMENT '父评论ID',
+  `reply_to_user_nickname` varchar(100) DEFAULT NULL COMMENT '被回复者昵称',
   `content` text NOT NULL COMMENT '评论内容',
   `status` tinyint DEFAULT '0' COMMENT '审核状态 0:待审核 1:已审核发布 2:审核拒绝',
   `refuse_reason` varchar(255) DEFAULT NULL COMMENT '拒绝原因',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '评论时间',
   PRIMARY KEY (`id`),
-  KEY `idx_article_status` (`article_id`,`status`)
+  KEY `idx_article_status` (`article_id`,`status`),
+  KEY `idx_comment_parent` (`parent_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户评论表';
 
 -- 6. 全局/系统配置表 (如热线电话、微信客服配置、管理员密码)

@@ -57,7 +57,7 @@ juzishuoqiu (项目根目录)
 │       │       │   ├── IndexController.java     # 基础跳转控制器
 │       │       │   ├── MiniArticleController.java# 小程序端接口（方案展示、收藏、评论）
 │       │       │   ├── MiniUserController.java   # 小程序端接口（快速登录、资料同步）
-│       │       │   └── AdminCmsController.java  # 管理后台专用接口（发布方案、审核评论）
+│       │       │   └── AdminCmsController.java  # 管理后台专用接口（发布方案、管理评论）
 │       │       ├── dao             # 数据访问层
 │       │       ├── model           # 数据实体层 (User, Article, Like, Favorite, Comment)
 │       │       └── service         # 业务逻辑层
@@ -80,7 +80,7 @@ juzishuoqiu (项目根目录)
 
 1.  **`user`（用户表）**：记录用户的微信 `openid`、昵称、头像。区分 `role` 字段（`admin` 与 `user`）。
 2.  **`article`（方案文章表）**：包含 `type` 字段（`1:推荐`、`2:今日方案`、`3:昨日回顾`），支持富文本（`content`）存储赛事分析，并有 `virtual_read`（虚拟阅读量，用于前期运营。
-3.  **`user_comment`（评论表）**：评论包含 `status` 字段（`0:待审核`、`1:展示`、`2:屏蔽`），强制执行**“先审后发”**，最大程度规避政治、涉赌等微信合规红线。
+3.  **`user_comment`（评论表）**：记录用户发表的互动言论，在言论落库前强制调用微信内容安全接口（`msgSecCheck`）进行自动合规检测。同时在后台管理端提供一键删除功能，保障内容安全。
 
 ---
 
@@ -171,21 +171,21 @@ public class MiniArticleController {
     }
 
     /**
-     * 用户发表评论（进入待审核队列，并在后端自动调用微信 msgSecCheck 敏感词检查）
+     * 用户发表评论（在后端自动调用微信 msgSecCheck 敏感词安全检查）
      */
     @PostMapping("/comment")
     public ApiResponse addComment(@RequestParam("articleId") Long articleId,
                                   @RequestParam("content") String content,
                                   @RequestHeader("X-WX-OPENID") String openid) {
-        // 1. 调用微信合规检测接口，防止出现博彩、胜负买卖、色情等内容
+        // 1. 调用微信合规检测接口，防止出现博彩、违规等内容
         boolean isSafe = articleService.checkContentSecurity(content);
         if (!isSafe) {
             return ApiResponse.error("评论包含敏感不合规词汇，发布失败");
         }
         
-        // 2. 存入数据库，状态设为 0(待审核)
+        // 2. 检测安全后直接存入数据库展示
         articleService.saveComment(articleId, content, openid);
-        return ApiResponse.ok("评论已提交，审核通过后将公开展示");
+        return ApiResponse.ok("评论发表成功");
     }
 }
 ```
@@ -222,7 +222,38 @@ public class IndexController {
 
 ---
 
-## 四、 微信小程序客户端 (前端) 接入方案
+## 四、 运营管理后台 (CMS) 不分离版设计
+
+由于采用**前后端不分离**的单容器部署模式，管理后台被完全打包在 Spring Boot 的静态资源目录中，并与后端路由无缝打通。
+
+### 1. 静态资源结构
+管理后台的所有前端界面和交互逻辑集成在一个高度优化的单页应用（SPA）中：
+*   **入口路径**：`/admin`（由 `IndexController` 重定向至 `/admin/index.html`）。
+*   **文件位置**：`src/main/resources/static/admin/index.html`。
+*   **资源加载**：通过公共高速 CDN 异步载入 **Vue 3**、**Element Plus** 和 **Tailwind CSS**，无需任何本地 node 构建步骤（如 `npm run build`），实现了镜像体积轻量化与极速部署。
+
+### 2. 核心功能板块
+*   **安全认证登录锁**：
+    *   管理后台配备单独的登录验证（默认账号：`admin`，默认密码：`orange888`，密码由数据库 `sys_config` 表读取）。
+*   **控制台仪表盘 (Dashboard)**：
+    *   展示全站运营核心指标：赛事研判方案总数、小程序注册用户数、累计评论总数。
+    *   展示微信云托管的系统状态看板（包括数据库连通性、免签 callContainer 隧道与合规 msgSecCheck 检查器的状态）。
+*   **赛事研判发布管理 (Articles)**：
+    *   **发布表单项**：标题、发布分类（推荐、今日方案、昨日回顾）、次级高亮角标（如 `今日早场`）、封面图 URL（支持一键生成随机精美体育背景图）、虚拟/真实阅读量及点赞配置、研判解析富文本正文。
+*   **用户评论管理 (Comments)**：
+    *   列表形式展示全站用户发表的评论，显示评论者微信头像、昵称、发表时间、评论文本内容以及关联的目标方案文章。
+    *   提供【删除】按钮的一键下架/物理删除操作，管理员可以随时清理不当或者违规言论。
+*   **全局参数配置 (Configs)**：
+    *   支持在线一键修改专属客服热线电话（原：`19232520317`）与管理员登录密码，保存直接实时落库同步。
+
+### 3. 本地调测与沙箱离线降级机制
+为了方便开发人员与运营人员在本地进行直观效果调测，即使未连通真实后端服务，前端管理页面也内置了**全套 LocalStorage 离线模拟数据和 Mock APIs 降级机制**：
+*   在没有启动后端 API 服务，或接口请求遇到 404/500 报错时，前端将自动接管并降级为“本地测试沙箱模式”。
+*   支持离线添加/修改方案、更新发布状态、删除不良评论及修改系统电话，修改后的数据会自动持久化到浏览器的 `localStorage` 中。
+
+---
+
+## 五、 微信小程序客户端 (前端) 接入方案
 
 在微信云托管环境下，微信小程序前端**无需配置服务器域名 (Request Domain)**，也不需要处理繁琐的 HTTPS 证书、用户登录态 Token 校验。通过使用微信开放平台提供的官方免签 SDK，可以直接安全地与部署在云托管内的 Spring Boot 进行通信：
 
@@ -234,7 +265,7 @@ App({
       console.error('请使用 2.2.3 或以上的基础库以使用云能力');
     } else {
       wx.cloud.init({
-        env: 'prod-xxxxxx', // 填写微信云托管的运行环境ID
+        env: 'prod-d4gmc9oke67a3ac4e', // 填写微信云托管的运行环境ID
         traceUser: true,
       });
     }
@@ -249,7 +280,7 @@ App({
 // 获取「今日方案」栏目列表数据
 wx.cloud.callContainer({
   config: {
-    env: 'prod-xxxxxx', // 微信云托管环境ID
+    env: 'prod-d4gmc9oke67a3ac4e', // 微信云托管环境ID
   },
   path: '/api/v1/mini/article/list',
   method: 'GET',
@@ -259,7 +290,7 @@ wx.cloud.callContainer({
     size: 10
   },
   header: {
-    'X-WX-SERVICE': 'springboot-wxcloudrun', // 云托管服务名称
+    'X-WX-SERVICE': 'springboot-drgz', // 云托管服务名称
   },
   success: (res) => {
     console.log('获取方案列表成功:', res.data);
@@ -275,16 +306,16 @@ wx.cloud.callContainer({
 
 ---
 
-## 五、 微信平台敏感类目与内容安全合规指导
+## 六、 微信平台敏感类目与内容安全合规指导
 
-为防止小程序因为“提供彩票走势、非法博彩推荐、赛事预测”等涉赌涉规行为被平台下架，必须在内容管理和文案描述上遵守以下核心准则：
+为防止小程序因为“提供彩票走势、非法博彩推荐、赛事预测”等涉赌涉规行为被平台下架，必须在内容管理 and 文案描述上遵守以下核心准则：
 
 ### 1. 资质合规
 *   **主体资质**：建议使用企业/自媒体资质申请小程序。
 *   **选择服务类目**：选择 **「体育 > 体育资讯」**、**「工具 > 工具资讯」** 或 **「社交 > 社区/论坛」**。绝对不要选择与博彩、彩票相关的类目。
 
 ### 2. 界面与文案去博彩化 (敏感词过滤规避)
-在前台方案分析、历史回顾文案中，必须严格执行**去博彩化**，用正规的“体育赛事学术和历史数据复盘分析”代替：
+在前台方案分析、历史回顾文案中，必须严格执行**去博彩化**，用正规的“体育赛事学术 and 历史数据复盘分析”代替：
 
 | 禁用博彩敏感词 | 推荐使用的替代正规词 |
 |:---|:---|
@@ -296,19 +327,19 @@ wx.cloud.callContainer({
 
 ### 3. 内容安全检测集成 (`msgSecCheck`)
 当用户在小程序端修改头像昵称、发表方案评论时，必须调用微信的官方合规接口：
-*   **头像/昵称拦截**：通过 `sys_config` 表和微信提供的敏感词检查，直接拦截非法、色情、涉赌的昵称。
+*   **头像/昵称拦截**：通过 `sys_config` 表 and 微信提供的敏感词检查，直接拦截非法、色情、涉赌的昵称。
 *   **评论拦截**：在 Spring Boot 后端中引入微信 `security.msgSecCheck` 开放接口，对评论文本进行实时检测，发现敏感词直接返回“评论不合规，发表失败”提示。
 
 ---
 
-## 六、 部署发布流程
+## 七、 部署发布流程
 
 1.  **管理后台前端编译打包**：
     *   在本地将运营管理后台的前端项目（如 Vue SPA）进行生产环境编译（`npm run build`）。
     *   将生成的 `dist` 目录下的所有静态资源（`index.html`、`static/` 目录等）复制并覆盖到本项目 `src/main/resources/static/admin/` 路径下。
 2.  **代码提交与部署**：
     *   使用 `git commit` 将代码库（包含 Java 源码、`db.sql`、编译后的前端页面）提交至 GitHub。
-    *   登录 **[微信云托管控制台]**，创建/选择服务 `springboot-wxcloudrun`。
+    *   登录 **[微信云托管控制台]**，创建/选择服务 `springboot-drgz`。
     *   在“部署发布”中绑定 GitHub 仓库，选择 `main` 分支一键触发流水线构建。微信云托管将根据项目根目录下的 `Dockerfile` 自动拉取环境、编译 Java 项目并完成镜像部署。
 3.  **内网数据库执行**：
     *   部署完成后，在云托管控制台“数据库”模块，将 `db.sql` 文件直接导入云数据库中执行，完成初始表结构以及默认管理员、专属客服热线的配置。

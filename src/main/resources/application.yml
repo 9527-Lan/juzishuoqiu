@@ -5,9 +5,9 @@ server:
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_ADDRESS}/${MYSQL_DATABASE:springboot_demo}
-    username: ${MYSQL_USERNAME}
-    password: ${MYSQL_PASSWORD}
+    url: jdbc:mysql://sh-cynosdbmysql-grp-8wpraur6.sql.tencentcdb.com:28245/juzishuoqiu?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: dHk6JWSM
   mvc:
     view:
       suffix: .html
@@ -15,3 +15,15 @@ spring:
 
 mybatis:
   mapper-locations: classpath*:mapper/*Mapper.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# Sa-Token 配置
+sa-token:
+  token-name: satoken          # token 名称 (写在 Header 或 Cookie 中的键名)
+  timeout: 2592000             # token 有效期，单位秒 (默认30天)
+  activity-timeout: -1         # 临时有效期，-1代表不开启
+  is-share: true               # 是否共享 token (同一账号共用一个token)
+  is-read-header: true         # 开启从 Header 中读取 token (极为适合微信小程序与 AJAX)
+  is-read-cookie: false        # 关闭 Cookie 读取 (小程序无原生 Cookie)
+
