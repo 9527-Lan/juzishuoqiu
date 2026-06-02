@@ -19,4 +19,13 @@ public class IndexController {
     return "index";
   }
 
+  /**
+   * 管理后台主页跳转映射
+   * @return 重定向到不分离静态资源管理后台
+   */
+  @GetMapping("/admin")
+  public String admin() {
+    return "redirect:/admin/index.html";
+  }
+
 }

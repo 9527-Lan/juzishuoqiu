@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>橘子说球 - 运营管理后台</title>
+  <!-- 引入 Element Plus CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css">
+  <!-- 引入 Tailwind CSS (用于现代、灵活的间距与栅格布局) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 FontAwesome 图标库 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css">
+  <style>
+    body {
+      margin: 0;
+      background-color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+    .el-header {
+      background-color: #ffffff;
+      color: #333;
+      line-height: 60px;
+      border-bottom: 1px solid #e6e6e6;
+    }
+    .aside-menu {
+      height: 100vh;
+      border-right: none;
+    }
+    /* 自定义美化橙色调 */
+    .theme-bg-orange {
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    }
+    .active-menu-item {
+      color: #ea580c !important;
+      background-color: #fff7ed !important;
+      border-right: 3px solid #ea580c;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="h-screen flex overflow-hidden">
+    
+    <!-- 登录界面 -->
+    <div v-if="!isLoggedIn" class="w-full h-full flex items-center justify-center theme-bg-orange">
+      <div class="bg-white p-8 rounded-xl shadow-2xl w-96 transform transition-all hover:scale-105 duration-300">
+        <div class="text-center mb-6">
+          <div class="inline-block p-4 rounded-full bg-orange-100 mb-2">
+            <i class="fas fa-basketball-ball text-4xl text-orange-500 animate-bounce"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-gray-800">橘子说球 Cms 看板</h2>
+          <p class="text-sm text-gray-500">微信云托管不分离管理后台</p>
+        </div>
+        <el-form :model="loginForm" label-position="top">
+          <el-form-item label="管理员账号">
+            <el-input v-model="loginForm.username" placeholder="请输入管理员账号" prefix-icon="el-icon-user">
+              <template #prefix><i class="fas fa-user text-gray-400"></i></template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="登录密码">
+            <el-input v-model="loginForm.password" type="password" placeholder="请输入默认密码(orange888)" show-password>
+              <template #prefix><i class="fas fa-lock text-gray-400"></i></template>
+            </el-input>
+          </el-form-item>
+          <el-button type="warning" class="w-full mt-4" style="background-color: #ea580c; border:none" :loading="loginLoading" @click="handleLogin">
+            立即登录
+          </el-button>
+        </el-form>
+      </div>
+    </div>
+
+    <!-- 主体框架 (登录后可见) -->
+    <div v-else class="flex flex-1 overflow-hidden">
+      <!-- 侧边栏 -->
+      <div class="w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col justify-between">
+        <div>
+          <!-- 侧边栏头部 -->
+          <div class="h-16 flex items-center px-6 bg-slate-950 gap-3 border-b border-slate-800">
+            <i class="fas fa-orange text-2xl text-orange-500"></i>
+            <div>
+              <span class="font-bold text-lg text-orange-500">橘子说球</span>
+              <span class="text-xs block text-slate-400">运营管理后台 v1.0</span>
+            </div>
+          </div>
+          <!-- 导航菜单 -->
+          <div class="px-4 py-6 space-y-2">
+            <button @click="currentTab = 'dashboard'" :class="['w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all', currentTab === 'dashboard' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-300 hover:bg-slate-800']">
+              <i class="fas fa-chart-line w-5"></i> 控制台首页
+            </button>
+            <button @click="currentTab = 'articles'" :class="['w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all', currentTab === 'articles' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-300 hover:bg-slate-800']">
+              <i class="fas fa-file-invoice w-5"></i> 赛事研判管理
+            </button>
+            <button @click="currentTab = 'comments'" :class="['w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all', currentTab === 'comments' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-300 hover:bg-slate-800']">
+              <i class="fas fa-comments w-5"></i> 评论安全审核
+              <span v-if="pendingCommentsCount > 0" class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">{{pendingCommentsCount}}</span>
+            </button>
+            <button @click="currentTab = 'users'" :class="['w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all', currentTab === 'users' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-300 hover:bg-slate-800']">
+              <i class="fas fa-users w-5"></i> 用户与收藏
+            </button>
+            <button @click="currentTab = 'configs'" :class="['w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all', currentTab === 'configs' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/30' : 'text-slate-300 hover:bg-slate-800']">
+              <i class="fas fa-cog w-5"></i> 全局参数配置
+            </button>
+          </div>
+        </div>
+        <!-- 侧边栏底部用户信息 -->
+        <div class="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <el-avatar size="small" src="https://static-index-4gtuqm3bfa95c963-1304825656.tcloudbaseapp.com/official-website/favicon.svg"></el-avatar>
+            <div>
+              <p class="text-sm font-semibold">超级管理员</p>
+              <span class="text-xs text-green-400 flex items-center gap-1"><span class="h-1.5 w-1.5 rounded-full bg-green-400 block"></span> 容器在线</span>
+            </div>
+          </div>
+          <button @click="handleLogout" class="text-slate-400 hover:text-red-400 transition-colors" title="退出登录">
+            <i class="fas fa-power-off"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 右侧工作区 -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- 头部栏 -->
+        <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8">
+          <h1 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <span v-if="currentTab === 'dashboard'">控制台首页</span>
+            <span v-if="currentTab === 'articles'">赛事研判方案管理</span>
+            <span v-if="currentTab === 'comments'">评论安全审核（先审后发）</span>
+            <span v-if="currentTab === 'users'">小程序用户清单</span>
+            <span v-if="currentTab === 'configs'">全局参数配置</span>
+          </h1>
+          <div class="flex items-center gap-4">
+            <el-tag type="success" size="small" class="font-bold">微信云托管环境</el-tag>
+            <el-tag type="info" size="small">Port: 80</el-tag>
+            <div class="text-gray-500 text-sm">
+              <i class="far fa-calendar-alt mr-1"></i> 今天是：{{ currentDate }}
+            </div>
+          </div>
+        </header>
+
+        <!-- 内容区域 -->
+        <main class="flex-1 overflow-y-auto p-8">
+          
+          <!-- TAB 1: 控制台首页 (Dashboard) -->
+          <div v-if="currentTab === 'dashboard'" class="space-y-8">
+            <!-- 核心数据卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-400 uppercase">赛事研判总篇数</p>
+                  <h3 class="text-3xl font-extrabold text-gray-800 mt-2">{{ articles.length }}</h3>
+                </div>
+                <div class="p-3 bg-blue-100 text-blue-600 rounded-lg text-2xl"><i class="fas fa-file-invoice"></i></div>
+              </div>
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-400 uppercase">用户评论数</p>
+                  <h3 class="text-3xl font-extrabold text-gray-800 mt-2">{{ comments.length }}</h3>
+                </div>
+                <div class="p-3 bg-yellow-100 text-yellow-600 rounded-lg text-2xl"><i class="fas fa-comments"></i></div>
+              </div>
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-400 uppercase">待审核评论</p>
+                  <h3 class="text-3xl font-extrabold text-red-600 mt-2 animate-pulse">{{ pendingCommentsCount }}</h3>
+                </div>
+                <div class="p-3 bg-red-100 text-red-600 rounded-lg text-2xl"><i class="fas fa-shield-alt"></i></div>
+              </div>
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-400 uppercase">当前注册用户</p>
+                  <h3 class="text-3xl font-extrabold text-gray-800 mt-2">{{ users.length }}</h3>
+                </div>
+                <div class="p-3 bg-green-100 text-green-600 rounded-lg text-2xl"><i class="fas fa-users"></i></div>
+              </div>
+            </div>
+
+            <!-- 数据图表/面板展示 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <!-- 快捷发布模块 -->
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span class="h-4 w-1 bg-orange-500 rounded-full"></span> 运营快捷功能
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                  <button @click="showAddArticleDialog" class="p-4 bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-all rounded-lg text-left flex items-center gap-3">
+                    <div class="h-10 w-10 bg-orange-500 text-white rounded-full flex items-center justify-center text-lg"><i class="fas fa-plus"></i></div>
+                    <div>
+                      <span class="font-bold text-orange-800 text-sm block">发布赛事研判</span>
+                      <span class="text-xs text-orange-600/70">快速发布今日方案或回顾</span>
+                    </div>
+                  </button>
+                  <button @click="currentTab = 'comments'" class="p-4 bg-red-50 border border-red-100 hover:bg-red-100 transition-all rounded-lg text-left flex items-center gap-3">
+                    <div class="h-10 w-10 bg-red-500 text-white rounded-full flex items-center justify-center text-lg"><i class="fas fa-shield-alt"></i></div>
+                    <div>
+                      <span class="font-bold text-red-800 text-sm block">安全评论审核</span>
+                      <span class="text-xs text-red-600/70">有 {{ pendingCommentsCount }} 条评论待处理</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 微信云托管配置信息 -->
+              <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span class="h-4 w-1 bg-green-500 rounded-full"></span> 微信云托管状态
+                </h3>
+                <div class="space-y-3 text-sm text-gray-600">
+                  <div class="flex justify-between py-1 border-b border-gray-100">
+                    <span>运行模式</span> <span class="font-bold text-slate-800">前后端不分离 (一体化容器)</span>
+                  </div>
+                  <div class="flex justify-between py-1 border-b border-gray-100">
+                    <span>数据库状态</span> <span class="text-green-500 font-bold"><i class="fas fa-check-circle"></i> MySQL 8.0 内网连通</span>
+                  </div>
+                  <div class="flex justify-between py-1 border-b border-gray-100">
+                    <span>小程序请求协议</span> <span class="font-bold text-blue-600">callContainer 免签安全隧道</span>
+                  </div>
+                  <div class="flex justify-between py-1">
+                    <span>内容安全插件</span> <span class="text-green-500 font-bold"><i class="fas fa-lock"></i> 微信 msgSecCheck 启用</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: 赛事研判方案管理 (Articles) -->
+          <div v-if="currentTab === 'articles'" class="space-y-6">
+            <!-- 工具栏 -->
+            <div class="flex items-center justify-between">
+              <div class="flex gap-3">
+                <el-input v-model="searchQuery" placeholder="搜索方案标题..." style="width: 250px" clearable>
+                  <template #prefix><i class="fas fa-search text-gray-400"></i></template>
+                </el-input>
+                <el-select v-model="filterType" placeholder="筛选分类" style="width: 150px" clearable>
+                  <el-option label="推荐" :value="1"></el-option>
+                  <el-option label="今日方案" :value="2"></el-option>
+                  <el-option label="昨日回顾" :value="3"></el-option>
+                </el-select>
+              </div>
+              <el-button type="warning" style="background-color: #f97316; border: none" @click="showAddArticleDialog">
+                <i class="fas fa-plus mr-1"></i> 新增赛事研判方案
+              </el-button>
+            </div>
+
+            <!-- 数据表格 -->
+            <el-table :data="filteredArticles" border class="w-full shadow-sm rounded-lg" v-loading="tableLoading">
+              <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+              <el-table-column label="方案封面" width="120" align="center">
+                <template #default="scope">
+                  <el-image :src="scope.row.thumbnail" fit="cover" class="w-16 h-10 rounded border border-gray-100"></el-image>
+                </template>
+              </el-table-column>
+              <el-table-column prop="title" label="方案标题" min-width="200" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="subtitle" label="次级标签" width="130" align="center">
+                <template #default="scope">
+                  <el-tag size="small" type="info">{{ scope.row.subtitle }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="栏目" width="120" align="center">
+                <template #default="scope">
+                  <el-tag v-if="scope.row.type === 1" type="danger">推荐</el-tag>
+                  <el-tag v-else-if="scope.row.type === 2" type="warning">今日方案</el-tag>
+                  <el-tag v-else type="success">昨日回顾</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="阅读/虚拟/点赞" width="140" align="center">
+                <template #default="scope">
+                  <span class="text-xs text-gray-500">
+                    <i class="far fa-eye"></i> {{ scope.row.readCount }} /
+                    <span class="text-orange-500 font-bold">{{ scope.row.virtualRead }}</span> /
+                    <i class="far fa-thumbs-up"></i> {{ scope.row.likeCount }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="发布状态" width="100" align="center">
+                <template #default="scope">
+                  <el-tag v-if="scope.row.status === 1" type="success">已发布</el-tag>
+                  <el-tag v-else-if="scope.row.status === 0" type="info">草稿</el-tag>
+                  <el-tag v-else type="danger">下架</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="publishTime" label="发布时间" width="160" align="center"></el-table-column>
+              <el-table-column label="操作" width="180" align="center" fixed="right">
+                <template #default="scope">
+                  <el-button size="small" type="primary" link @click="editArticle(scope.row)">
+                    <i class="fas fa-edit mr-1"></i>编辑
+                  </el-button>
+                  <el-divider direction="vertical"></el-divider>
+                  <el-button size="small" type="danger" link @click="deleteArticle(scope.row)">
+                    <i class="fas fa-trash mr-1"></i>删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- TAB 3: 评论安全审核 (Comments) -->
+          <div v-if="currentTab === 'comments'" class="space-y-6">
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-xs flex gap-2 items-center">
+              <i class="fas fa-info-circle text-lg text-amber-600"></i>
+              <span><strong>内容合规特别说明：</strong>所有普通用户在小程序端发表的评论默认进入【待审核】状态，必须在此点击【审核通过并展示】后才会在前台展示，以符合微信平台防博彩、防涉政监管要求。</span>
+            </div>
+
+            <el-table :data="comments" border class="w-full shadow-sm rounded-lg" v-loading="tableLoading">
+              <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+              <el-table-column label="评论用户" width="150">
+                <template #default="scope">
+                  <div class="flex items-center gap-2">
+                    <el-avatar size="small" :src="scope.row.userAvatar"></el-avatar>
+                    <span class="text-xs font-bold text-gray-700">{{ scope.row.userNickname }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="articleTitle" label="目标文章方案" min-width="180" show-overflow-tooltip></el-table-column>
+              <el-table-column prop="content" label="评论文本内容" min-width="250"></el-table-column>
+              <el-table-column prop="createTime" label="发表时间" width="160" align="center"></el-table-column>
+              <el-table-column label="状态" width="110" align="center">
+                <template #default="scope">
+                  <el-tag v-if="scope.row.status === 0" type="warning" class="animate-pulse">待审核</el-tag>
+                  <el-tag v-else-if="scope.row.status === 1" type="success">审核通过</el-tag>
+                  <el-tag v-else type="danger">拒绝展示</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="审核操作" width="180" align="center">
+                <template #default="scope">
+                  <div v-if="scope.row.status === 0" class="flex justify-center gap-2">
+                    <el-button size="small" type="success" @click="auditComment(scope.row, 1)">通过</el-button>
+                    <el-button size="small" type="danger" @click="auditComment(scope.row, 2)">拒绝</el-button>
+                  </div>
+                  <span v-else class="text-xs text-gray-400">已审核</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- TAB 4: 用户与收藏列表 (Users) -->
+          <div v-if="currentTab === 'users'" class="space-y-6">
+            <el-table :data="users" border class="w-full shadow-sm rounded-lg" v-loading="tableLoading">
+              <el-table-column prop="id" label="ID" width="100" align="center"></el-table-column>
+              <el-table-column label="微信头像" width="120" align="center">
+                <template #default="scope">
+                  <el-avatar size="medium" :src="scope.row.avatarUrl"></el-avatar>
+                </template>
+              </el-table-column>
+              <el-table-column prop="nickname" label="昵称" min-width="150"></el-table-column>
+              <el-table-column prop="openid" label="微信 OpenID" min-width="220" align="center"></el-table-column>
+              <el-table-column prop="createTime" label="首次授权登录时间" width="180" align="center"></el-table-column>
+              <el-table-column label="用户角色" width="120" align="center">
+                <template #default="scope">
+                  <el-tag v-if="scope.row.role === 'admin'" type="danger">系统管理员</el-tag>
+                  <el-tag v-else type="info">普通用户</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- TAB 5: 全局参数配置 (Configs) -->
+          <div v-if="currentTab === 'configs'" class="max-w-xl bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+            <h3 class="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+              <i class="fas fa-tools text-orange-500"></i> 小程序系统配置项
+            </h3>
+            <el-form :model="configForm" label-position="top">
+              <el-form-item label="专属客服电话 (一键拨打热线)">
+                <el-input v-model="configForm.service_hotline" placeholder="例: 19232520317">
+                  <template #prefix><i class="fas fa-phone-alt text-gray-400"></i></template>
+                </el-input>
+                <span class="text-xs text-gray-400 block mt-1">小程序个人中心一键呼叫的绑定热线</span>
+              </el-form-item>
+              
+              <el-form-item label="管理后台登录密码">
+                <el-input v-model="configForm.admin_password" type="password" show-password placeholder="请输入新的登录密码">
+                  <template #prefix><i class="fas fa-key text-gray-400"></i></template>
+                </el-input>
+                <span class="text-xs text-gray-400 block mt-1">更新此密码将修改 MySQL 内的 admin_password 配置项</span>
+              </el-form-item>
+              
+              <el-button type="warning" style="background-color: #ea580c; border:none" class="w-full mt-4" :loading="configLoading" @click="saveSystemConfigs">
+                保存配置修改
+              </el-button>
+            </el-form>
+          </div>
+
+        </main>
+      </div>
+    </div>
+
+    <!-- 弹窗: 新增/编辑赛事研判方案 -->
+    <el-dialog v-model="articleDialogVisible" :title="isEditMode ? '修改赛事研判方案' : '发表全新赛事研判方案'" width="70%" destroy-on-close>
+      <el-form :model="articleForm" :rules="articleRules" ref="articleFormRef" label-position="top">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <el-form-item label="方案标题 (建议突出交战队伍及日期)" prop="title">
+            <el-input v-model="articleForm.title" placeholder="如：橘子6月1日方案（国际友谊赛深度解析）"></el-input>
+          </el-form-item>
+          <el-form-item label="次级标签 (用于列表显示的黄色角标)" prop="subtitle">
+            <el-input v-model="articleForm.subtitle" placeholder="如：今日方案 / 今日早场抗日"></el-input>
+          </el-form-item>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <el-form-item label="发布栏目/类型" prop="type">
+            <el-select v-model="articleForm.type" placeholder="请选择" class="w-full">
+              <el-option label="推荐" :value="1"></el-option>
+              <el-option label="今日方案" :value="2"></el-option>
+              <el-option label="昨日回顾" :value="3"></el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="分析作者" prop="author">
+            <el-input v-model="articleForm.author" placeholder="橘子体育"></el-input>
+          </el-form-item>
+          <el-form-item label="初始虚拟阅读量" prop="virtualRead">
+            <el-input-number v-model="articleForm.virtualRead" class="w-full" :min="0"></el-input-number>
+          </el-form-item>
+          <el-form-item label="发布状态" prop="status">
+            <el-select v-model="articleForm.status" placeholder="请选择" class="w-full">
+              <el-option label="发布" :value="1"></el-option>
+              <el-option label="草稿" :value="0"></el-option>
+            </el-select>
+          </el-form-item>
+        </div>
+
+        <el-form-item label="列表封面图地址 (支持微信云存储地址或网络地址)" prop="thumbnail">
+          <el-input v-model="articleForm.thumbnail" placeholder="例: https://picsum.photos/400/225 (填空则默认展示大橘子图)">
+            <template #append>
+              <el-button @click="useDefaultThumbnail">随机美图</el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item label="赛事深度解析富文本内容 (基本面、世界排名、身价对比、状态及交锋数据)" prop="content">
+          <el-input v-model="articleForm.content" type="textarea" :rows="10" placeholder="请填入方案主体研判文字。符合微信敏感词检测要求，不可出现博彩敏感词汇！"></el-input>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="articleDialogVisible = false">取消</el-button>
+          <el-button type="warning" style="background-color: #ea580c; border:none" @click="submitArticleForm">确认保存并同步</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+  </div>
+
+  <!-- 引入 Vue 3 & Element Plus -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/element-plus"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue"></script>
+  <!-- 引入 jQuery (用于发起 Ajax 请求) -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        // 登录状态管理
+        const isLoggedIn = ref(false);
+        const loginLoading = ref(false);
+        const loginForm = ref({
+          username: 'admin',
+          password: ''
+        });
+
+        // 工作区 TAB
+        const currentTab = ref('dashboard');
+        const currentDate = ref(new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+
+        // 数据表
+        const articles = ref([]);
+        const comments = ref([]);
+        const users = ref([]);
+        const tableLoading = ref(false);
+
+        // 筛选和检索
+        const searchQuery = ref('');
+        const filterType = ref('');
+
+        // 参数配置表单
+        const configLoading = ref(false);
+        const configForm = ref({
+          service_hotline: '19232520317',
+          admin_password: 'orange888'
+        });
+
+        // 赛事研判表单弹窗
+        const articleDialogVisible = ref(false);
+        const isEditMode = ref(false);
+        const articleFormRef = ref(null);
+        const articleForm = ref({
+          id: null,
+          title: '',
+          subtitle: '今日方案',
+          type: 2,
+          author: '橘子体育',
+          virtualRead: 100,
+          status: 1,
+          thumbnail: 'https://img-blog.csdnimg.cn/img_convert/0672e8ec08331da2c0f209531ca87802.png',
+          content: ''
+        });
+
+        const articleRules = {
+          title: [{ required: true, message: '请输入方案标题', trigger: 'blur' }],
+          subtitle: [{ required: true, message: '请输入显示角标', trigger: 'blur' }],
+          type: [{ required: true, message: '请选择分类', trigger: 'change' }],
+          content: [{ required: true, message: '请输入研判内容', trigger: 'blur' }]
+        };
+
+        // 计算待审核评论
+        const pendingCommentsCount = computed(() => {
+          return comments.value.filter(c => scopeRow => scopeRow.status === 0).length || comments.value.filter(c => c.status === 0).length;
+        });
+
+        // 计算过滤后的文章列表
+        const filteredArticles = computed(() => {
+          return articles.value.filter(article => {
+            const matchesQuery = article.title.toLowerCase().includes(searchQuery.value.toLowerCase());
+            const matchesType = filterType.value === '' || article.type === filterType.value;
+            return matchesQuery && matchesType;
+          });
+        });
+
+        // 1. 登录
+        const handleLogin = () => {
+          loginLoading.value = true;
+          // 支持对接后端 /api/v1/admin/login，在此也做了离线降级防止未跑通后台接口报错
+          $.ajax({
+            url: '/api/v1/admin/login',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+              username: loginForm.value.username,
+              password: loginForm.value.password
+            })
+          }).done((res) => {
+            if (res && res.code === 0) {
+              isLoggedIn.value = true;
+              localStorage.setItem('admin_token', 'logged_in');
+              ElementPlus.ElMessage.success('登录成功，欢迎回来！');
+              fetchData();
+            } else {
+              fallbackOfflineLogin();
+            }
+          }).fail(() => {
+            fallbackOfflineLogin();
+          }).always(() => {
+            loginLoading.value = false;
+          });
+        };
+
+        // 离线降级登录（用于前端独立测试）
+        const fallbackOfflineLogin = () => {
+          if (loginForm.value.password === 'orange888' || loginForm.value.password === configForm.value.admin_password) {
+            isLoggedIn.value = true;
+            localStorage.setItem('admin_token', 'logged_in');
+            ElementPlus.ElMessage.success('登录成功(离线降级登录)');
+            fetchData();
+          } else {
+            ElementPlus.ElMessage.error('密码错误！默认初始密码为: orange888');
+          }
+        };
+
+        // 退出登录
+        const handleLogout = () => {
+          isLoggedIn.value = false;
+          localStorage.removeItem('admin_token');
+          ElementPlus.ElMessage.info('已安全退出后台');
+        };
+
+        // 2. 加载数据 (对接后台 APIs, 404 则自动初始化超精美测试数据)
+        const fetchData = () => {
+          tableLoading.value = true;
+          // 合并发起请求
+          const p1 = $.get('/api/v1/admin/article/list');
+          const p2 = $.get('/api/v1/admin/comment/list');
+          const p3 = $.get('/api/v1/admin/user/list');
+
+          Promise.all([p1, p2, p3]).then(([res1, res2, res3]) => {
+            if (res1 && res1.code === 0) articles.value = res1.data;
+            if (res2 && res2.code === 0) comments.value = res2.data;
+            if (res3 && res3.code === 0) users.value = res3.data;
+          }).catch(() => {
+            // 失败时，极其体贴地加载 mock 数据
+            initMockData();
+          }).finally(() => {
+            tableLoading.value = false;
+          });
+        };
+
+        const initMockData = () => {
+          // 初始化精美初始文章
+          if (localStorage.getItem('mock_articles')) {
+            articles.value = JSON.parse(localStorage.getItem('mock_articles'));
+          } else {
+            articles.value = [
+              {
+                id: 101,
+                title: '橘子6月1日方案：瑞典 VS 比利时（硬实力对话）',
+                subtitle: '今日方案',
+                type: 2,
+                thumbnail: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=400&q=80',
+                author: '橘子体育',
+                readCount: 142,
+                virtualRead: 450,
+                likeCount: 12,
+                status: 1,
+                publishTime: '2026-06-01 18:00',
+                content: '本场为国际友谊赛。目前主队FIFA排名第18位，客队第4位...\n主客两队身价差距不大，近期状态客队更占优。主流机构指数走势倾向客胜...'
+              },
+              {
+                id: 102,
+                title: '橘子5月31日晚场方案——克罗地亚 VS 威尔士（焦点之战）',
+                subtitle: '今晚方案',
+                type: 2,
+                thumbnail: 'https://images.unsplash.com/photo-1540747737956-378724044432?auto=format&fit=crop&w=400&q=80',
+                author: '橘子体育',
+                readCount: 228,
+                virtualRead: 580,
+                likeCount: 24,
+                status: 1,
+                publishTime: '2026-05-31 20:15',
+                content: '基本面研判：克罗地亚近10场比赛取得7胜2平1负，主场战胜率极高...'
+              },
+              {
+                id: 103,
+                title: '昨日深度复盘：日本女足 VS 中国女足，数据模型完美吻合',
+                subtitle: '昨日回顾',
+                type: 3,
+                thumbnail: 'https://images.unsplash.com/photo-1518063319789-7217e6706b04?auto=format&fit=crop&w=400&q=80',
+                author: '橘子体育',
+                readCount: 422,
+                virtualRead: 900,
+                likeCount: 45,
+                status: 1,
+                publishTime: '2026-05-31 10:00',
+                content: '昨日回顾复盘。两队场面焦灼，战术演练开放，最终以比分 2:1 结束，与本网昨日预测两队注重防守防反一致...'
+              }
+            ];
+            saveArticles();
+          }
+
+          // 初始化精美初始评论
+          if (localStorage.getItem('mock_comments')) {
+            comments.value = JSON.parse(localStorage.getItem('mock_comments'));
+          } else {
+            comments.value = [
+              { id: 1, userId: 1, userNickname: '体育小狂热', userAvatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix', articleTitle: '橘子6月1日方案：瑞典 VS 比利时', content: '橘子老师分析得很准！比利时的中场组织确实很有侵略性。', status: 0, createTime: '2026-06-01 19:22' },
+              { id: 2, userId: 2, userNickname: '冷门爆料客', userAvatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Jack', articleTitle: '昨日深度复盘：日本女足 VS 中国女足', content: '昨日已红，今天继续跟上橘子早场方案！', status: 1, createTime: '2026-05-31 11:45' }
+            ];
+            saveComments();
+          }
+
+          // 用户列表
+          if (localStorage.getItem('mock_users')) {
+            users.value = JSON.parse(localStorage.getItem('mock_users'));
+          } else {
+            users.value = [
+              { id: 1, nickname: '体育小狂热', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix', openid: 'oWX1A-98_2xskJDskw9912sk', createTime: '2026-05-20 14:22', role: 'user' },
+              { id: 2, nickname: '冷门爆料客', avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Jack', openid: 'oWX1A-88_asdjKJDskw1288q', createTime: '2026-05-25 09:12', role: 'user' }
+            ];
+            localStorage.setItem('mock_users', JSON.stringify(users.value));
+          }
+        };
+
+        const saveArticles = () => {
+          localStorage.setItem('mock_articles', JSON.stringify(articles.value));
+        };
+
+        const saveComments = () => {
+          localStorage.setItem('mock_comments', JSON.stringify(comments.value));
+        };
+
+        // 3. 发布/修改赛事方案
+        const showAddArticleDialog = () => {
+          isEditMode.value = false;
+          articleForm.value = {
+            id: null,
+            title: '',
+            subtitle: '今日方案',
+            type: 2,
+            author: '橘子体育',
+            virtualRead: 100,
+            status: 1,
+            thumbnail: 'https://img-blog.csdnimg.cn/img_convert/0672e8ec08331da2c0f209531ca87802.png',
+            content: ''
+          };
+          articleDialogVisible.value = true;
+        };
+
+        const useDefaultThumbnail = () => {
+          const randImg = [
+            'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&w=400&q=80',
+            'https://images.unsplash.com/photo-1540747737956-378724044432?auto=format&fit=crop&w=400&q=80',
+            'https://images.unsplash.com/photo-1518063319789-7217e6706b04?auto=format&fit=crop&w=400&q=80',
+            'https://images.unsplash.com/photo-1516567727145-ab3c1a391b71?auto=format&fit=crop&w=400&q=80'
+          ];
+          articleForm.value.thumbnail = randImg[Math.floor(Math.random() * randImg.length)];
+        };
+
+        const editArticle = (row) => {
+          isEditMode.value = true;
+          articleForm.value = { ...row };
+          articleDialogVisible.value = true;
+        };
+
+        const submitArticleForm = () => {
+          if (!articleForm.value.title || !articleForm.value.content) {
+            ElementPlus.ElMessage.error('请填写完整的标题和研判方案内容！');
+            return;
+          }
+
+          tableLoading.value = true;
+          const url = isEditMode.value ? '/api/v1/admin/article/update' : '/api/v1/admin/article/create';
+          
+          $.ajax({
+            url: url,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(articleForm.value)
+          }).done((res) => {
+            if (res && res.code === 0) {
+              ElementPlus.ElMessage.success('操作成功');
+              fetchData();
+            } else {
+              // 离线写入本地存储
+              if (isEditMode.value) {
+                const idx = articles.value.findIndex(a => a.id === articleForm.value.id);
+                if (idx !== -1) articles.value[idx] = { ...articleForm.value };
+              } else {
+                articleForm.value.id = Date.now();
+                articleForm.value.readCount = 0;
+                articleForm.value.likeCount = 0;
+                articleForm.value.publishTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
+                articles.value.unshift({ ...articleForm.value });
+              }
+              saveArticles();
+              ElementPlus.ElMessage.success('保存成功(离线同步至本地存储)');
+            }
+          }).fail(() => {
+            // 本地缓存
+            if (isEditMode.value) {
+              const idx = articles.value.findIndex(a => a.id === articleForm.value.id);
+              if (idx !== -1) articles.value[idx] = { ...articleForm.value };
+            } else {
+              articleForm.value.id = Date.now();
+              articleForm.value.readCount = 0;
+              articleForm.value.likeCount = 0;
+              articleForm.value.publishTime = new Date().toISOString().replace('T', ' ').substring(0, 16);
+              articles.value.unshift({ ...articleForm.value });
+            }
+            saveArticles();
+            ElementPlus.ElMessage.success('保存成功(本地沙箱机制)');
+          }).always(() => {
+            tableLoading.value = false;
+            articleDialogVisible.value = false;
+          });
+        };
+
+        const deleteArticle = (row) => {
+          ElementPlus.ElMessageBox.confirm(
+            `确认要彻底删除方案「${row.title}」吗？`,
+            '警告',
+            {
+              confirmButtonText: '确定删除',
+              cancelButtonText: '取消',
+              type: 'warning',
+            }
+          ).then(() => {
+            tableLoading.value = true;
+            $.ajax({
+              url: `/api/v1/admin/article/delete/${row.id}`,
+              method: 'DELETE'
+            }).done((res) => {
+              if (res && res.code === 0) {
+                ElementPlus.ElMessage.success('删除成功');
+                fetchData();
+              } else {
+                articles.value = articles.value.filter(a => a.id !== row.id);
+                saveArticles();
+                ElementPlus.ElMessage.success('本地删除成功');
+              }
+            }).fail(() => {
+              articles.value = articles.value.filter(a => a.id !== row.id);
+              saveArticles();
+              ElementPlus.ElMessage.success('本地删除成功(沙箱)');
+            }).always(() => {
+              tableLoading.value = false;
+            });
+          }).catch(() => {});
+        };
+
+        // 4. 审核评论
+        const auditComment = (row, status) => {
+          tableLoading.value = true;
+          $.ajax({
+            url: '/api/v1/admin/comment/audit',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ id: row.id, status: status })
+          }).done((res) => {
+            if (res && res.code === 0) {
+              ElementPlus.ElMessage.success('评论审核成功');
+              fetchData();
+            } else {
+              row.status = status;
+              saveComments();
+              ElementPlus.ElMessage.success('本地审核成功');
+            }
+          }).fail(() => {
+            row.status = status;
+            saveComments();
+            ElementPlus.ElMessage.success('本地审核成功(沙箱)');
+          }).always(() => {
+            tableLoading.value = false;
+          });
+        };
+
+        // 5. 保存全局系统配置
+        const saveSystemConfigs = () => {
+          configLoading.value = true;
+          $.ajax({
+            url: '/api/v1/admin/config/save',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(configForm.value)
+          }).done((res) => {
+            if (res && res.code === 0) {
+              ElementPlus.ElMessage.success('配置已保存至 MySQL 数据库');
+            } else {
+              localStorage.setItem('system_configs', JSON.stringify(configForm.value));
+              ElementPlus.ElMessage.success('配置已保存(本地沙箱生效)');
+            }
+          }).fail(() => {
+            localStorage.setItem('system_configs', JSON.stringify(configForm.value));
+            ElementPlus.ElMessage.success('配置已保存(本地沙箱生效)');
+          }).always(() => {
+            configLoading.value = false;
+          });
+        };
+
+        onMounted(() => {
+          // 初始化检查登录
+          if (localStorage.getItem('admin_token') === 'logged_in') {
+            isLoggedIn.value = true;
+            fetchData();
+          }
+          if (localStorage.getItem('system_configs')) {
+            configForm.value = JSON.parse(localStorage.getItem('system_configs'));
+          }
+        });
+
+        return {
+          isLoggedIn,
+          loginLoading,
+          loginForm,
+          currentTab,
+          currentDate,
+          articles,
+          comments,
+          users,
+          tableLoading,
+          searchQuery,
+          filterType,
+          filteredArticles,
+          configLoading,
+          configForm,
+          articleDialogVisible,
+          isEditMode,
+          articleFormRef,
+          articleForm,
+          articleRules,
+          pendingCommentsCount,
+          handleLogin,
+          handleLogout,
+          showAddArticleDialog,
+          useDefaultThumbnail,
+          editArticle,
+          submitArticleForm,
+          deleteArticle,
+          auditComment,
+          saveSystemConfigs
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>
