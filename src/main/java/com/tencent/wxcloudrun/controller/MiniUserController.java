@@ -133,23 +133,7 @@ public class MiniUserController {
             user.setRole("user");
             userMapper.insert(user);
         } else {
-            // 如果用户已存在，但小程序端有更新的昵称或头像资料，则自动实现静默比对和更新同步
-            boolean needUpdate = false;
-            if (nickname != null && !nickname.trim().isEmpty() && !nickname.equals(user.getNickname())) {
-                // 检查昵称唯一性，防止静默同步导致重复
-                User existing = userMapper.findByNickname(nickname);
-                if (existing == null || existing.getId().equals(user.getId())) {
-                    user.setNickname(nickname);
-                    needUpdate = true;
-                }
-            }
-            if (avatarUrl != null && !avatarUrl.trim().isEmpty() && !avatarUrl.equals(user.getAvatarUrl())) {
-                user.setAvatarUrl(avatarUrl);
-                needUpdate = true;
-            }
-            if (needUpdate) {
-                userMapper.update(user);
-            }
+            // 已经存在的用户再次登录，不应该修改/覆盖已有的头像和昵称，保持已有资料不变
         }
 
         // 使用 Sa-Token 登录微信小程序用户
@@ -191,6 +175,13 @@ public class MiniUserController {
         }
 
         userMapper.update(user);
-        return ApiResponse.ok(user);
+
+        // 统一返回 { user, token } 结构，确保小程序端登录凭证本地存储永远不会失效/丢失
+        String tokenValue = cn.dev33.satoken.stp.StpUtil.getTokenValue();
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("user", user);
+        result.put("token", tokenValue);
+
+        return ApiResponse.ok(result);
     }
 }
