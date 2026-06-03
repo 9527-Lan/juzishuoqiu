@@ -11,11 +11,20 @@ import com.tencent.wxcloudrun.model.Comment;
 import com.tencent.wxcloudrun.model.SysConfig;
 import com.tencent.wxcloudrun.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import cn.hutool.http.HttpUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.hutool.json.JSONUtil;
+import cn.hutool.json.JSONObject;
+import cn.binarywang.wx.miniapp.api.WxMaService;
+import cn.binarywang.wx.miniapp.api.impl.WxMaServiceImpl;
+import cn.binarywang.wx.miniapp.config.impl.WxMaDefaultConfigImpl;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.File;
+
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +46,25 @@ public class AdminCmsController {
 
     @Autowired
     private SysConfigMapper sysConfigMapper;
+
+    @Value("${wx.miniprogram.appid:wx8ac8fb0b363e193e}")
+    private String wxAppid;
+
+    @Value("${wx.miniprogram.secret:7ff2d70328143787f164868c87a9a12f}")
+    private String wxSecret;
+
+    private WxMaService wxMaService;
+
+    private synchronized WxMaService getWxMaService() {
+        if (wxMaService == null) {
+            WxMaDefaultConfigImpl config = new WxMaDefaultConfigImpl();
+            config.setAppid(wxAppid);
+            config.setSecret(wxSecret);
+            wxMaService = new WxMaServiceImpl();
+            wxMaService.setWxMaConfig(config);
+        }
+        return wxMaService;
+    }
 
     /**
      * 管理后台账号登录接口 (对应 orange888 或新保存密码)
@@ -70,8 +98,7 @@ public class AdminCmsController {
     }
 
     /**
-     * 图片上传接口，供富文本编辑器调用
-     * 保存图片到本地 uploads/ 文件夹，并返回可通过 /uploads/xxx 直接加载的完整 URL 地址
+     * 图片上传接口（支持富文本与小程序头像上传）
      */
     @PostMapping("/upload")
     public ApiResponse upload(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
@@ -80,39 +107,76 @@ public class AdminCmsController {
         }
 
         try {
-            // 确保本地 uploads 文件夹存在 (使用 getAbsoluteFile 获得绝对路径)
-            File uploadDir = new File("uploads").getAbsoluteFile();
-            if (!uploadDir.exists()) {
-                uploadDir.mkdirs();
-            }
-
-            // 获取原文件名及后缀并生成 UUID 唯一文件名
             String originalFilename = file.getOriginalFilename();
-            String suffix = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                suffix = originalFilename.substring(originalFilename.lastIndexOf("."));
-            } else {
-                suffix = ".jpg"; // 兜底默认后缀
-            }
+            String suffix = (originalFilename != null && originalFilename.contains(".")) 
+                ? originalFilename.substring(originalFilename.lastIndexOf(".")) : ".jpg";
             String filename = UUID.randomUUID().toString() + suffix;
 
-            // 写入本地物理硬盘磁盘 (利用绝对路径强制落盘，使用 java.nio.file 规避 Tomcat 工作目录 Bug)
-            File destFile = new File(uploadDir, filename).getAbsoluteFile();
-            java.nio.file.Files.copy(file.getInputStream(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            String envId = System.getenv("CBR_ENV_ID");
+            if (envId == null || envId.trim().isEmpty()) {
+                envId = System.getenv("WX_ENV_ID");
+            }
+            if (envId == null || envId.trim().isEmpty()) {
+                envId = "prod-d4gmc9oke67a3ac4e";
+            }
 
-            // 拼接完整的可请求的图片链接
+            String storagePath = "uploads/" + filename;
+            String accessToken = getWxMaService().getAccessToken();
+
+            JSONObject requestBody = JSONUtil.createObj();
+            requestBody.set("env", envId);
+            requestBody.set("path", storagePath);
+
+            String requestUrl = "https://api.weixin.qq.com/tcb/uploadfile?access_token=" + accessToken;
+            String responseStr = HttpUtil.post(requestUrl, requestBody.toString());
+            JSONObject responseJson = JSONUtil.parseObj(responseStr);
+
+            if (responseJson == null) {
+                return ApiResponse.error("微信存储接口无响应");
+            }
+            if (!Integer.valueOf(0).equals(responseJson.getInt("errcode"))) {
+                return ApiResponse.error("获取微信上传链接失败: " + responseJson.getStr("errmsg"));
+            }
+
+            String uploadUrl = responseJson.getStr("url");
+            String signature = responseJson.getStr("authorization");
+            String token = responseJson.getStr("token");
+            String cosFileId = responseJson.getStr("cos_file_id");
+            String fileId = responseJson.getStr("file_id");
+
+            if (fileId == null || fileId.trim().isEmpty()) {
+                fileId = cosFileId;
+            }
+
+            if (fileId != null && fileId.startsWith("cloud://") && fileId.contains("/")) {
+                try {
+                    String host = fileId.substring(8, fileId.indexOf("/", 8));
+                    FileViewController.bucketHost = host;
+                } catch (Exception ignored) {}
+            }
+
+            final String finalFilename = originalFilename != null ? originalFilename : "file.jpg";
+            HttpResponse uploadResponse = HttpRequest.post(uploadUrl)
+                .form("key", storagePath)
+                .form("Signature", signature)
+                .form("x-cos-security-token", token)
+                .form("x-cos-meta-fileid", cosFileId)
+                .form("file", file.getBytes(), finalFilename)
+                .execute();
+
+            if (!uploadResponse.isOk()) {
+                return ApiResponse.error("上传至腾讯云存储失败，状态码: " + uploadResponse.getStatus());
+            }
+
             String scheme = request.getScheme();
             String serverName = request.getServerName();
             int serverPort = request.getServerPort();
-            String baseUrl;
-            if ("localhost".equals(serverName) || "127.0.0.1".equals(serverName)) {
-                baseUrl = scheme + "://" + serverName + ":" + serverPort;
-            } else {
-                // 线上云托管，采用相对路径或云域名
-                baseUrl = scheme + "://" + serverName;
-            }
+            String baseUrl = ("localhost".equals(serverName) || "127.0.0.1".equals(serverName))
+                ? scheme + "://" + serverName + ":" + serverPort : scheme + "://" + serverName;
 
-            String fileUrl = baseUrl + "/uploads/" + filename;
+            String encodedFileId = java.net.URLEncoder.encode(fileId, "UTF-8");
+            String fileUrl = baseUrl + "/download?fileId=" + encodedFileId;
+            System.out.println("===> [图片上传] 上传成功！微信云存储文件ID=" + fileId + ", 中转访问链接: " + fileUrl);
 
             Map<String, String> result = new HashMap<>();
             result.put("url", fileUrl);
@@ -120,7 +184,69 @@ public class AdminCmsController {
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ApiResponse.error("图片保存失败: " + e.getMessage());
+            return ApiResponse.error("文件上传发生异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 根据 WeChat cloud:// FileID 或者是相对存储路径，换取带签名的临时公网下载链接
+     * 对接官方 batchdownloadfile 接口，支持 2 小时有效期的带安全签名访问 URL。
+     */
+    @GetMapping("/download-url")
+    public ApiResponse getDownloadUrl(@RequestParam("fileId") String fileId) {
+        if (fileId == null || fileId.trim().isEmpty()) {
+            return ApiResponse.error("fileId 不能为空");
+        }
+
+        // 提取或配置微信云托管环境 ID
+        String envId = System.getenv("CBR_ENV_ID");
+        if (envId == null || envId.trim().isEmpty()) {
+            envId = System.getenv("WX_ENV_ID");
+        }
+        if (envId == null || envId.trim().isEmpty()) {
+            envId = "prod-d4gmc9oke67a3ac4e"; // 默认线上环境 ID
+        }
+
+        String targetFileId = fileId;
+        // 如果传入的是相对路径 e.g. "uploads/abc.jpg"，自动拼装为完整的 cloud:// 格式
+        if (!fileId.startsWith("cloud://")) {
+            targetFileId = "cloud://" + envId + "/" + fileId;
+        }
+
+        try {
+            // 获取 access_token
+            String accessToken = getWxMaService().getAccessToken();
+
+            JSONObject requestBody = JSONUtil.createObj();
+            requestBody.set("env", envId);
+
+            JSONObject fileObj = JSONUtil.createObj();
+            fileObj.set("fileid", targetFileId);
+            fileObj.set("max_age", 7200); // 2 小时有效时间
+
+            requestBody.set("file_list", JSONUtil.createArray().set(fileObj));
+
+            String requestUrl = "https://api.weixin.qq.com/tcb/batchdownloadfile?access_token=" + accessToken;
+            String responseStr = HttpUtil.post(requestUrl, requestBody.toString());
+            JSONObject responseJson = JSONUtil.parseObj(responseStr);
+
+            if (responseJson != null && Integer.valueOf(0).equals(responseJson.getInt("errcode"))) {
+                cn.hutool.json.JSONArray fileList = responseJson.getJSONArray("file_list");
+                if (fileList != null && !fileList.isEmpty()) {
+                    JSONObject fileResult = fileList.getJSONObject(0);
+                    if (Integer.valueOf(0).equals(fileResult.getInt("status"))) {
+                        Map<String, String> result = new HashMap<>();
+                        result.put("downloadUrl", fileResult.getStr("download_url"));
+                        return ApiResponse.ok(result);
+                    } else {
+                        return ApiResponse.error("微信云存储状态错误: " + fileResult.getStr("errmsg"));
+                    }
+                }
+            }
+            return ApiResponse.error("获取下载链接失败: " + (responseJson != null ? responseJson.getStr("errmsg") : "无响应"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("获取下载链接异常: " + e.getMessage());
         }
     }
 
