@@ -32,7 +32,7 @@ public class MiniUserController {
         String chatUrl = sysConfigMapper.getValueByKey("service_chat_url");
 
         if (hotline == null || hotline.trim().isEmpty()) {
-            hotline = "19232520317"; // 降级默认值
+            hotline = ""; // 降级默认值
         }
         if (corpId == null || corpId.trim().isEmpty()) {
             corpId = "ww88c1c4f52bd328a6"; // 默认/降级企业ID
@@ -109,7 +109,7 @@ public class MiniUserController {
             // 新增并初始化注册用户
             user = new User();
             user.setOpenid(openid);
-            
+
             // 智能自动生成并不重复昵称的校验机制
             String finalNickname = nickname;
             if (finalNickname == null || finalNickname.trim().isEmpty() || "微信用户".equals(finalNickname)) {
@@ -127,7 +127,7 @@ public class MiniUserController {
                 }
             }
             user.setNickname(finalNickname);
-            
+
             user.setAvatarUrl(avatarUrl != null && !avatarUrl.trim().isEmpty() ? avatarUrl : "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix");
             user.setStatus(1);
             user.setRole("user");
